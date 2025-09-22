@@ -1,8 +1,16 @@
 import os
-from typing import List, Dict, Any
+from typing import Dict, Any
+import tempfile
+import io
+
+import numpy as np
+import requests
+import librosa
+import soundfile as sf
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 app = FastAPI()
 
@@ -80,3 +88,78 @@ def plan_transition(tracks: Dict[str, Any]):
     }
 
     return plan
+
+
+@app.post("/offline-mix")
+def offline_mix(payload: Dict[str, Any]):
+    """
+    Create a simple offline crossfade mix between two audio URLs.
+    Payload:
+    {
+      "from": { "url": str, "startSec"?: number, "durationSec"?: number },
+      "to":   { "url": str, "startSec"?: number, "durationSec"?: number },
+      "crossfadeSec"?: number
+    }
+    Returns a WAV audio stream.
+    """
+    src = payload.get("from", {})
+    tgt = payload.get("to", {})
+    crossfade_sec = float(payload.get("crossfadeSec", 12.0))
+
+    def download_to_temp(url: str) -> str:
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        fd, path = tempfile.mkstemp()
+        with os.fdopen(fd, "wb") as f:
+            f.write(r.content)
+        return path
+
+    def load_segment(url: str, start_sec: float = 0.0, duration_sec: float | None = None, sr: int = 44100) -> np.ndarray:
+        path = download_to_temp(url)
+        try:
+            y, _sr = librosa.load(path, sr=sr, mono=True)
+        finally:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+        if start_sec > 0:
+            y = y[int(start_sec * sr):]
+        if duration_sec is not None and duration_sec > 0:
+            y = y[:int(duration_sec * sr)]
+        return y
+
+    from_url = str(src.get("url", ""))
+    to_url = str(tgt.get("url", ""))
+    if not from_url or not to_url:
+        return {"error": "Missing from.url or to.url"}
+
+    sr = 44100
+    y_from = load_segment(from_url, float(src.get("startSec", 0.0)), src.get("durationSec"), sr)
+    y_to = load_segment(to_url, float(tgt.get("startSec", 0.0)), tgt.get("durationSec"), sr)
+
+    overlap = int(max(0.5, crossfade_sec) * sr)
+    if len(y_from) <= overlap or len(y_to) <= overlap:
+        # If too short, just concatenate
+        mixed = np.concatenate([y_from, y_to])
+    else:
+        y_from_head = y_from[:-overlap]
+        y_from_tail = y_from[-overlap:]
+        y_to_head = y_to[:overlap]
+        y_to_tail = y_to[overlap:]
+
+        fade_out = np.linspace(1.0, 0.0, overlap)
+        fade_in = 1.0 - fade_out
+        overlap_mix = y_from_tail * fade_out + y_to_head * fade_in
+
+        mixed = np.concatenate([y_from_head, overlap_mix, y_to_tail])
+
+    # Normalize to -1..1 to avoid clipping
+    peak = np.max(np.abs(mixed)) if mixed.size else 1.0
+    if peak > 1.0:
+        mixed = mixed / peak
+
+    buf = io.BytesIO()
+    sf.write(buf, mixed, sr, format="WAV", subtype="PCM_16")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="audio/wav")
