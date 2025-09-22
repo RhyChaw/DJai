@@ -2,6 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+declare global {
+	interface Window {
+		Spotify?: {
+			Player: new (options: { name: string; getOAuthToken: (cb: (t: string) => void) => void; volume?: number }) => {
+				addListener: (event: string, cb: (payload: unknown) => void) => void;
+				connect: () => Promise<boolean>;
+			};
+		};
+		onSpotifyWebPlaybackSDKReady?: () => void;
+	}
+}
+
 type SpotifyImage = { url: string; width?: number; height?: number };
 type SpotifyUser = { display_name?: string; images?: SpotifyImage[] };
 
@@ -53,7 +65,6 @@ export default function Home() {
 	const [playlists, setPlaylists] = useState<SpotifyPlaylist[] | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [isPreview, setIsPreview] = useState(false);
 
 	const [tracks, setTracks] = useState<PlaylistTrack[] | null>(null);
 	const [fromTrack, setFromTrack] = useState<PlaylistTrack | null>(null);
@@ -61,6 +72,8 @@ export default function Home() {
 	const [plan, setPlan] = useState<TransitionPlan | null>(null);
 	const [planning, setPlanning] = useState(false);
 	const [exporting, setExporting] = useState(false);
+	const [deviceId, setDeviceId] = useState<string | null>(null);
+	const [playerReady, setPlayerReady] = useState(false);
 
 	async function apiGet<T>(path: string): Promise<T> {
 		const res = await fetch(`${API_BASE}${path}`, {
@@ -107,7 +120,6 @@ export default function Home() {
 	};
 
 	const handlePreview = () => {
-		setIsPreview(true);
 		setUser({ display_name: "DJAi Preview" });
 		setPlaylists([
 			{ id: "p1", name: "Hype Starters", images: [], tracks: { total: 18 } },
@@ -224,6 +236,60 @@ export default function Home() {
 
 	const loginHref = `${API_BASE}/auth/login`;
 
+	// Web Playback SDK loader and init
+	useEffect(() => {
+		if (window.onSpotifyWebPlaybackSDKReady) return;
+		const script = document.createElement("script");
+		script.src = "https://sdk.scdn.co/spotify-player.js";
+		script.async = true;
+		(document.body || document.head).appendChild(script);
+		window.onSpotifyWebPlaybackSDKReady = () => {
+			setPlayerReady(true);
+		};
+	}, []);
+
+	const enablePlayer = async () => {
+		try {
+			const tokenRes = await fetch(`${API_BASE}/player/token`, { credentials: "include" });
+			if (!tokenRes.ok) throw new Error(await tokenRes.text());
+			const { access_token } = await tokenRes.json();
+			const Spotify = window.Spotify;
+			if (!Spotify || !Spotify.Player) throw new Error("SDK not ready");
+			const player = new Spotify.Player({
+				name: "DJAi Player",
+				getOAuthToken: (cb: (t: string) => void) => cb(access_token),
+				volume: 0.8,
+			});
+			player.addListener("ready", (payload: unknown) => {
+				const { device_id } = payload as { device_id: string };
+				setDeviceId(device_id);
+				(void (async () => {
+					await fetch(`${API_BASE}/player/transfer`, {
+						method: "POST",
+						credentials: "include",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ device_id }),
+					});
+				})());
+			});
+			player.addListener("initialization_error", (p: unknown) => {
+				const { message } = p as { message: string };
+				console.error(message);
+			});
+			player.addListener("authentication_error", (p: unknown) => {
+				const { message } = p as { message: string };
+				console.error(message);
+			});
+			player.addListener("account_error", (p: unknown) => {
+				const { message } = p as { message: string };
+				console.error(message);
+			});
+			player.connect();
+		} catch (e) {
+			console.error(e);
+		}
+	};
+
 	const crossfadeView = useMemo(() => {
 		if (!plan || !fromTrack || !toTrack) return null;
 		const total = plan.from.duration + plan.to.start + plan.to.duration;
@@ -284,6 +350,13 @@ export default function Home() {
 								>
 									I logged in, refresh
 								</button>
+								<button
+									className="rounded-full border border-white/20 px-5 py-3 text-sm text-white/90 hover:bg-white/5"
+									onClick={enablePlayer}
+								disabled={!playerReady}
+							>
+								Enable live player
+							</button>
 								<button
 									className="rounded-full border border-white/20 px-5 py-3 text-sm text-white/90 hover:bg-white/5"
 									onClick={handlePreview}
@@ -410,6 +483,23 @@ export default function Home() {
 										}`}
 									>
 										{planning ? "Planning…" : "Plan transition"}
+									</button>
+									<button
+										disabled={!deviceId || !fromTrack}
+										onClick={async () => {
+											if (!fromTrack) return;
+											await fetch(`${API_BASE}/player/play`, {
+												method: "PUT",
+												credentials: "include",
+												headers: { "Content-Type": "application/json" },
+												body: JSON.stringify({ uris: [`spotify:track:${fromTrack.id}`] }),
+											});
+										}}
+										className={`rounded-full px-5 py-2 text-sm font-medium border ${
+											deviceId && fromTrack ? "border-white/20 hover:bg-white/5" : "border-white/10 text-white/60 cursor-not-allowed"
+										}`}
+									>
+										Play selection (live)
 									</button>
 									<button
 										disabled={!canExport || exporting}
