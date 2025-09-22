@@ -45,7 +45,8 @@ type TransitionPlan = {
 	to: { start: number; duration: number };
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+const ABS_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+const API_BASE = ABS_BACKEND ? ABS_BACKEND : "/api";
 
 export default function Home() {
 	const [user, setUser] = useState<SpotifyUser | null>(null);
@@ -61,7 +62,7 @@ export default function Home() {
 	const [exporting, setExporting] = useState(false);
 
 	async function apiGet<T>(path: string): Promise<T> {
-		const res = await fetch(`${BACKEND_URL}${path}`, {
+		const res = await fetch(`${API_BASE}${path}`, {
 			credentials: "include",
 		});
 		if (!res.ok) throw new Error(await res.text());
@@ -69,7 +70,7 @@ export default function Home() {
 	}
 
 	async function apiPost<T>(path: string, body: unknown): Promise<T> {
-		const res = await fetch(`${BACKEND_URL}${path}`, {
+		const res = await fetch(`${API_BASE}${path}`, {
 			method: "POST",
 			credentials: "include",
 			headers: { "Content-Type": "application/json" },
@@ -177,7 +178,7 @@ export default function Home() {
 				to: { url: toTrack.previewUrl, startSec: 0 },
 				crossfadeSec,
 			};
-			const resp = await fetch(`${BACKEND_URL}/mix/offline-mix`, {
+			const resp = await fetch(`${ABS_BACKEND ? ABS_BACKEND : "/ml"}/offline-mix`, {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
@@ -201,7 +202,7 @@ export default function Home() {
 		}
 	};
 
-	const loginHref = `${BACKEND_URL}/auth/login`;
+	const loginHref = `${API_BASE}/auth/login`;
 
 	const crossfadeView = useMemo(() => {
 		if (!plan || !fromTrack || !toTrack) return null;
