@@ -7,10 +7,12 @@ const router = Router();
 const COOKIE_NAME = "sp_session";
 
 function serializeSessionCookie(session: { accessToken: string; refreshToken?: string; expiresAt: number }) {
+  const clientOrigin = process.env.CLIENT_ORIGIN || "";
+  const isCrossSite = clientOrigin && !clientOrigin.includes("localhost");
   return cookie.serialize(COOKIE_NAME, JSON.stringify(session), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isCrossSite || process.env.NODE_ENV === "production",
+    sameSite: (isCrossSite ? "none" : "lax") as any,
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });
