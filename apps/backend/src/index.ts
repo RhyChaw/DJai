@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import authRoutes from "./routes.auth";
+import mixRoutes from "./routes.mix";
 
 dotenv.config();
 
@@ -12,6 +13,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.use("/auth", authRoutes);
+app.use("/mix", mixRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
