@@ -9,10 +9,9 @@
 }
 
 body {
-	background: radial-gradient(1200px 600px at 20% -10%, rgba(29,185,84,0.25), transparent 60%),
-		radial-gradient(800px 400px at 90% 0%, rgba(30,215,96,0.15), transparent 60%),
+	background: radial-gradient(1000px 500px at 20% -10%, rgba(29,185,84,0.14), transparent 60%),
+		radial-gradient(700px 350px at 90% 0%, rgba(30,215,96,0.1), transparent 60%),
 		linear-gradient(180deg, var(--spotify-dark), var(--spotify-darker));
-	color: #fff;
 }
 
 .hero-glow {
@@ -24,10 +23,10 @@ body {
 	position: absolute;
 	inset: -40px;
 	z-index: -1;
-	background: radial-gradient(650px 200px at 30% 0%, rgba(29,185,84,0.25), transparent 55%),
-		radial-gradient(500px 200px at 70% 10%, rgba(30,215,96,0.18), transparent 55%);
-	filter: blur(30px);
-	opacity: 0.9;
+	background: radial-gradient(650px 200px at 30% 0%, rgba(29,185,84,0.18), transparent 55%),
+		radial-gradient(500px 200px at 70% 10%, rgba(30,215,96,0.12), transparent 55%);
+	filter: blur(40px);
+	opacity: 0.6;
 }
 
 .button-spotify {
@@ -41,7 +40,7 @@ body {
 }
 
 .card-glass {
-	background: rgba(255,255,255,0.06);
-	border: 1px solid rgba(255,255,255,0.12);
+	background: rgba(255,255,255,0.04);
+	border: 1px solid rgba(255,255,255,0.08);
 	backdrop-filter: blur(10px);
 }

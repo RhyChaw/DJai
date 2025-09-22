@@ -271,7 +271,7 @@ export default function Home() {
 							</div>
 						</div>
 						{/* Visual card */}
-						<div className="card-glass rounded-2xl p-6 md:p-8">
+						<div className="card-glass rounded-2xl p-6 md:p-8 hidden sm:block">
 							<div className="space-y-4">
 								<div className="h-24 rounded-lg bg-gradient-to-r from-white/10 to-white/5" />
 								<div className="grid grid-cols-3 gap-2">
