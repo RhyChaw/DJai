@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import authRoutes from "./routes.auth";
 import mixRoutes from "./routes.mix";
+import playerRoutes from "./routes.player";
 
 dotenv.config();
 
@@ -14,6 +15,7 @@ app.use(cookieParser());
 
 app.use("/auth", authRoutes);
 app.use("/mix", mixRoutes);
+app.use("/player", playerRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
