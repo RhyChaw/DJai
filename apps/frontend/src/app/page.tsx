@@ -53,6 +53,7 @@ export default function Home() {
 	const [playlists, setPlaylists] = useState<SpotifyPlaylist[] | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [isPreview, setIsPreview] = useState(false);
 
 	const [tracks, setTracks] = useState<PlaylistTrack[] | null>(null);
 	const [fromTrack, setFromTrack] = useState<PlaylistTrack | null>(null);
@@ -103,6 +104,25 @@ export default function Home() {
 		} finally {
 			setLoading(false);
 		}
+	};
+
+	const handlePreview = () => {
+		setIsPreview(true);
+		setUser({ display_name: "DJAi Preview" });
+		setPlaylists([
+			{ id: "p1", name: "Hype Starters", images: [], tracks: { total: 18 } },
+			{ id: "p2", name: "Sunset Grooves", images: [], tracks: { total: 24 } },
+			{ id: "p3", name: "Late Night Tech", images: [], tracks: { total: 31 } },
+		]);
+		setTracks([
+			{ id: "t1", name: "Track One", artists: "Artist A", duration_ms: 220000 },
+			{ id: "t2", name: "Track Two", artists: "Artist B", duration_ms: 210000 },
+			{ id: "t3", name: "Track Three", artists: "Artist C", duration_ms: 245000 },
+			{ id: "t4", name: "Track Four", artists: "Artist D", duration_ms: 230000 },
+		]);
+		setFromTrack(null);
+		setToTrack(null);
+		setPlan({ tempoRatio: 1.03, strategy: "smooth", from: { start: 45, duration: 12 }, to: { start: 0, duration: 12 } });
 	};
 
 	const handleOpenPlaylist = async (playlistId: string) => {
@@ -263,6 +283,12 @@ export default function Home() {
 									}}
 								>
 									I logged in, refresh
+								</button>
+								<button
+									className="rounded-full border border-white/20 px-5 py-3 text-sm text-white/90 hover:bg-white/5"
+									onClick={handlePreview}
+								>
+									Preview site
 								</button>
 							</div>
 							<div className="flex gap-3 pt-2 text-xs text-white/60">
