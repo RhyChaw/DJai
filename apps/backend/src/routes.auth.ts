@@ -109,4 +109,23 @@ router.get("/playlists", async (req, res) => {
   }
 });
 
+router.get("/playlists/:playlistId/tracks", async (req, res) => {
+  try {
+    const cookies = cookie.parse(req.headers.cookie || "");
+    const raw = cookies[COOKIE_NAME];
+    if (!raw) return res.status(401).send("No session");
+
+    const session = JSON.parse(raw);
+    if (Date.now() > session.expiresAt) return res.status(401).send("Token expired");
+
+    const playlistId = String(req.params.playlistId || "");
+    if (!playlistId) return res.status(400).send("Missing playlistId");
+
+    const tracks = await spotifyGet(`/playlists/${playlistId}/tracks?limit=100`, session.accessToken);
+    res.json(tracks);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to fetch tracks" });
+  }
+});
+
 export default router;

@@ -1,10 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type SpotifyImage = { url: string; width?: number; height?: number };
 type SpotifyUser = { display_name?: string; images?: SpotifyImage[] };
+
+type SpotifyArtist = { name: string };
+type SpotifyAlbum = { images?: SpotifyImage[] };
+
+type SpotifyTrack = {
+	id: string;
+	name: string;
+	artists: SpotifyArtist[];
+	album?: SpotifyAlbum;
+	duration_ms: number;
+};
+
 type SpotifyPlaylist = { id: string; name: string; images?: SpotifyImage[]; tracks?: { total: number } };
+
+type PlaylistTrack = {
+	id: string;
+	name: string;
+	artists: string;
+	imageUrl?: string;
+	duration_ms: number;
+};
+
+type AudioAnalysis = {
+	sections?: Array<{ start: number }>;
+	beats?: unknown[];
+};
+
+type AudioFeatures = {
+	tempo?: number;
+	key?: number;
+};
+
+type TransitionPlan = {
+	tempoRatio: number;
+	strategy: string;
+	from: { start: number; duration: number };
+	to: { start: number; duration: number };
+};
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
@@ -14,9 +51,26 @@ export default function Home() {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	const [tracks, setTracks] = useState<PlaylistTrack[] | null>(null);
+	const [fromTrack, setFromTrack] = useState<PlaylistTrack | null>(null);
+	const [toTrack, setToTrack] = useState<PlaylistTrack | null>(null);
+	const [plan, setPlan] = useState<TransitionPlan | null>(null);
+	const [planning, setPlanning] = useState(false);
+
 	async function apiGet<T>(path: string): Promise<T> {
 		const res = await fetch(`${BACKEND_URL}${path}`, {
 			credentials: "include",
+		});
+		if (!res.ok) throw new Error(await res.text());
+		return (await res.json()) as T;
+	}
+
+	async function apiPost<T>(path: string, body: unknown): Promise<T> {
+		const res = await fetch(`${BACKEND_URL}${path}`, {
+			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
 		});
 		if (!res.ok) throw new Error(await res.text());
 		return (await res.json()) as T;
@@ -47,7 +101,95 @@ export default function Home() {
 		}
 	};
 
+	const handleOpenPlaylist = async (playlistId: string) => {
+		setTracks(null);
+		setFromTrack(null);
+		setToTrack(null);
+		setPlan(null);
+		setLoading(true);
+		setError(null);
+		try {
+			const data = await apiGet<{ items: Array<{ track: SpotifyTrack | null }> }>(`/auth/playlists/${playlistId}/tracks`);
+			const mapped: PlaylistTrack[] = (data.items || [])
+				.map((it: { track: SpotifyTrack | null }) => it.track)
+				.filter((t: SpotifyTrack | null): t is SpotifyTrack => Boolean(t && t.id))
+				.map((t: SpotifyTrack) => ({
+					id: String(t.id),
+					name: String(t.name),
+					artists: (t.artists || []).map((a: SpotifyArtist) => a.name).join(", "),
+					imageUrl: t.album?.images?.[0]?.url,
+					duration_ms: Number(t.duration_ms || 0),
+				}));
+			setTracks(mapped);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : "Failed to load tracks";
+			setError(message);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const canPlan = !!fromTrack && !!toTrack;
+
+	const handlePlan = async () => {
+		if (!fromTrack || !toTrack) return;
+		setPlanning(true);
+		setError(null);
+		setPlan(null);
+		try {
+			const fromAnalysis = await apiGet<{ analysis: AudioAnalysis; features: AudioFeatures }>(`/mix/analysis?trackId=${encodeURIComponent(fromTrack.id)}`);
+			const toAnalysis = await apiGet<{ analysis: AudioAnalysis; features: AudioFeatures }>(`/mix/analysis?trackId=${encodeURIComponent(toTrack.id)}`);
+
+			const payload = {
+				from: {
+					...fromAnalysis.analysis,
+					...fromAnalysis.features,
+					duration_ms: fromTrack.duration_ms,
+				},
+				to: {
+					...toAnalysis.analysis,
+					...toAnalysis.features,
+				},
+			};
+			const planned = await apiPost<TransitionPlan>("/mix/plan", payload);
+			setPlan(planned);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : "Failed to plan transition";
+			setError(message);
+		} finally {
+			setPlanning(false);
+		}
+	};
+
 	const loginHref = `${BACKEND_URL}/auth/login`;
+
+	const crossfadeView = useMemo(() => {
+		if (!plan || !fromTrack || !toTrack) return null;
+		const total = plan.from.duration + plan.to.start + plan.to.duration;
+		const scale = (s: number) => (total > 0 ? Math.max(2, (s / total) * 100) : 0);
+		const fromLead = Math.max(0, plan.from.start);
+		const fromBar = scale(plan.from.duration);
+		const toLead = Math.max(0, plan.to.start);
+		const toBar = scale(plan.to.duration);
+		return (
+			<div className="mt-6">
+				<div className="text-sm text-white/70 flex items-center gap-4">
+					<div>
+						<span className="text-white/90 font-medium">Tempo ratio:</span> {plan.tempoRatio.toFixed(2)}x
+					</div>
+					<div className="hidden sm:block">Strategy: {plan.strategy}</div>
+				</div>
+				<div className="mt-3 space-y-2">
+					<div className="h-3 w-full rounded bg-white/10 relative overflow-hidden">
+						<div className="absolute top-0 bottom-0 left-0 bg-[var(--spotify-green)]/80" style={{ width: `${fromBar}%`, marginLeft: `${scale(fromLead)}%` }} />
+					</div>
+					<div className="h-3 w-full rounded bg-white/10 relative overflow-hidden">
+						<div className="absolute top-0 bottom-0 left-0 bg-white/70" style={{ width: `${toBar}%`, marginLeft: `${scale(toLead)}%` }} />
+					</div>
+				</div>
+			</div>
+		);
+	}, [plan, fromTrack, toTrack]);
 
 	return (
 		<div className="min-h-screen">
@@ -130,7 +272,11 @@ export default function Home() {
 								<h2 className="text-lg font-semibold mb-3">Your Playlists</h2>
 								<ul className="grid grid-cols-2 sm:grid-cols-3 gap-4">
 									{playlists.map((pl) => (
-										<li key={pl.id} className="card-glass rounded-xl p-3 hover:shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition">
+										<li
+											key={pl.id}
+											className="card-glass rounded-xl p-3 hover:shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition cursor-pointer"
+											onClick={() => handleOpenPlaylist(pl.id)}
+										>
 											{pl.images?.[0]?.url ? (
 												// eslint-disable-next-line @next/next/no-img-element
 												<img src={pl.images[0].url} alt="cover" className="w-full h-32 object-cover rounded" />
@@ -142,6 +288,66 @@ export default function Home() {
 										</li>
 									))}
 								</ul>
+							</div>
+						)}
+
+						{tracks && (
+							<div className="mt-8">
+								<h3 className="text-lg font-semibold mb-3">Select two tracks</h3>
+								<ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+									{tracks.map((t) => {
+										const isFrom = fromTrack?.id === t.id;
+										const isTo = toTrack?.id === t.id;
+										return (
+											<li
+												key={t.id}
+												className={`rounded-xl p-3 border transition cursor-pointer ${
+													isFrom
+														? "border-[var(--spotify-green)] bg-[var(--spotify-green)]/10"
+													: isTo
+														? "border-white/40 bg-white/5"
+														: "border-white/15 bg-white/0 hover:bg-white/5"
+												}`}
+												onClick={() => {
+													if (!fromTrack || isFrom) {
+														setFromTrack(isFrom ? null : t);
+														setPlan(null);
+														return;
+													}
+													if (!toTrack || isTo) {
+														setToTrack(isTo ? null : t);
+														setPlan(null);
+														return;
+													}
+												}}
+											>
+												{t.imageUrl ? (
+													// eslint-disable-next-line @next/next/no-img-element
+													<img src={t.imageUrl} alt="cover" className="w-full h-32 object-cover rounded" />
+												) : (
+													<div className="w-full h-32 bg-white/10 rounded" />
+												)}
+												<div className="mt-2 font-medium text-sm line-clamp-1">{t.name}</div>
+												<div className="text-xs text-white/60 line-clamp-1">{t.artists}</div>
+											</li>
+									);
+									})}
+								</ul>
+
+								<div className="mt-5 flex items-center gap-3">
+									<button
+										disabled={!canPlan || planning}
+										onClick={handlePlan}
+										className={`rounded-full px-5 py-2 text-sm font-medium ${
+											canPlan && !planning ? "button-spotify" : "bg-white/10 text-white/60 cursor-not-allowed"
+										}`}
+									>
+										{planning ? "Planning…" : "Plan transition"}
+									</button>
+									{plan ? <span className="text-sm text-white/70">Planned!</span> : null}
+								</div>
+
+								{crossfadeView}
 							</div>
 						)}
 					</section>
