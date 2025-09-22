@@ -14,6 +14,7 @@ type SpotifyTrack = {
 	artists: SpotifyArtist[];
 	album?: SpotifyAlbum;
 	duration_ms: number;
+	preview_url?: string | null;
 };
 
 type SpotifyPlaylist = { id: string; name: string; images?: SpotifyImage[]; tracks?: { total: number } };
@@ -24,6 +25,7 @@ type PlaylistTrack = {
 	artists: string;
 	imageUrl?: string;
 	duration_ms: number;
+	previewUrl?: string;
 };
 
 type AudioAnalysis = {
@@ -56,6 +58,7 @@ export default function Home() {
 	const [toTrack, setToTrack] = useState<PlaylistTrack | null>(null);
 	const [plan, setPlan] = useState<TransitionPlan | null>(null);
 	const [planning, setPlanning] = useState(false);
+	const [exporting, setExporting] = useState(false);
 
 	async function apiGet<T>(path: string): Promise<T> {
 		const res = await fetch(`${BACKEND_URL}${path}`, {
@@ -119,6 +122,7 @@ export default function Home() {
 					artists: (t.artists || []).map((a: SpotifyArtist) => a.name).join(", "),
 					imageUrl: t.album?.images?.[0]?.url,
 					duration_ms: Number(t.duration_ms || 0),
+					previewUrl: t.preview_url || undefined,
 				}));
 			setTracks(mapped);
 		} catch (e) {
@@ -130,6 +134,7 @@ export default function Home() {
 	};
 
 	const canPlan = !!fromTrack && !!toTrack;
+	const canExport = !!fromTrack?.previewUrl && !!toTrack?.previewUrl;
 
 	const handlePlan = async () => {
 		if (!fromTrack || !toTrack) return;
@@ -158,6 +163,41 @@ export default function Home() {
 			setError(message);
 		} finally {
 			setPlanning(false);
+		}
+	};
+
+	const handleExport = async () => {
+		if (!fromTrack?.previewUrl || !toTrack?.previewUrl) return;
+		setExporting(true);
+		setError(null);
+		try {
+			const crossfadeSec = 8;
+			const body = {
+				from: { url: fromTrack.previewUrl, startSec: 15 },
+				to: { url: toTrack.previewUrl, startSec: 0 },
+				crossfadeSec,
+			};
+			const resp = await fetch(`${BACKEND_URL}/mix/offline-mix`, {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			});
+			if (!resp.ok) throw new Error(await resp.text());
+			const blob = await resp.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `${fromTrack.name}__${toTrack.name}_mix.wav`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : "Failed to export mix";
+			setError(message);
+		} finally {
+			setExporting(false);
 		}
 	};
 
@@ -344,7 +384,15 @@ export default function Home() {
 									>
 										{planning ? "Planning…" : "Plan transition"}
 									</button>
-									{plan ? <span className="text-sm text-white/70">Planned!</span> : null}
+									<button
+										disabled={!canExport || exporting}
+										onClick={handleExport}
+										className={`rounded-full px-5 py-2 text-sm font-medium border ${
+											canExport && !exporting ? "border-white/20 hover:bg-white/5" : "border-white/10 text-white/60 cursor-not-allowed"
+										}`}
+									>
+										{exporting ? "Exporting…" : "Export 30s Preview Mix"}
+									</button>
 								</div>
 
 								{crossfadeView}
