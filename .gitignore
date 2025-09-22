@@ -1,0 +1,28 @@
+# Node
+node_modules
+.next
+out
+*.log
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+.venv
+
+# macOS
+.DS_Store
+
+# Env
+.env
+.env.*
+apps/*/.env
+
+# Build
+apps/backend/dist
+
+# Editor
+.vscode
+.idea
